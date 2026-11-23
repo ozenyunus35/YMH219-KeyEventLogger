@@ -430,12 +430,12 @@ partial class MainForm
         // dtpTo
         //
         dtpTo.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-        dtpTo.CustomFormat = "dd.MM.yy HH:mm:ss";
+        dtpTo.CustomFormat = "dd.MM.yyyy HH:mm:ss";
         dtpTo.Font = new Font("Segoe UI", 9F);
         dtpTo.Format = DateTimePickerFormat.Custom;
-        dtpTo.Location = new Point(352, 12);
+        dtpTo.Location = new Point(338, 12);
         dtpTo.Name = "dtpTo";
-        dtpTo.Size = new Size(150, 23);
+        dtpTo.Size = new Size(164, 23);
         dtpTo.TabIndex = 2;
         dtpTo.TabStop = false;
         //
@@ -444,7 +444,7 @@ partial class MainForm
         lblDash.Anchor = AnchorStyles.Top | AnchorStyles.Right;
         lblDash.AutoSize = true;
         lblDash.ForeColor = Color.FromArgb(100, 116, 139);
-        lblDash.Location = new Point(336, 16);
+        lblDash.Location = new Point(322, 16);
         lblDash.Name = "lblDash";
         lblDash.Size = new Size(12, 15);
         lblDash.TabIndex = 1;
@@ -453,12 +453,12 @@ partial class MainForm
         // dtpFrom
         //
         dtpFrom.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-        dtpFrom.CustomFormat = "dd.MM.yy HH:mm:ss";
+        dtpFrom.CustomFormat = "dd.MM.yyyy HH:mm:ss";
         dtpFrom.Font = new Font("Segoe UI", 9F);
         dtpFrom.Format = DateTimePickerFormat.Custom;
-        dtpFrom.Location = new Point(180, 12);
+        dtpFrom.Location = new Point(152, 12);
         dtpFrom.Name = "dtpFrom";
-        dtpFrom.Size = new Size(150, 23);
+        dtpFrom.Size = new Size(164, 23);
         dtpFrom.TabIndex = 0;
         dtpFrom.TabStop = false;
         //

@@ -63,11 +63,13 @@ public class KeyCapturePad : Control
         g.Clear(Parent?.BackColor ?? SystemColors.Control);
 
         var box = new Rectangle(1, 1, Width - 3, Height - 3);
+        // Mor kesintisiz çerçeve sadece gerçekten dinlerken; kayıt kapalıyken "aktif" gibi görünmesin
+        bool listening = recording && Focused;
         using (GraphicsPath path = RoundedRect(box, 12))
         using (var fill = new SolidBrush(BackColor))
-        using (var pen = new Pen(Focused ? Accent : BorderIdle, Focused ? 2f : 1.5f))
+        using (var pen = new Pen(listening ? Accent : BorderIdle, listening ? 2f : 1.5f))
         {
-            if (!Focused)
+            if (!listening)
                 pen.DashStyle = DashStyle.Dash;
             g.FillPath(fill, path);
             g.DrawPath(pen, path);

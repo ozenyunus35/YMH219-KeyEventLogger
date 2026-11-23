@@ -26,6 +26,9 @@ public partial class MainForm : Form
     private int visibleLineCount;
     private bool statsDirty = true;
     private string? currentFilePath;
+    // Son kaydetmeden/açmadan sonra yeni kayıt geldi mi? (kapatırken uyarmak için)
+    private bool dirty;
+    private string lastFolder = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
 
     public MainForm()
     {
@@ -44,17 +47,34 @@ public partial class MainForm : Form
         session.RecordingStateChanged += (_, _) => UpdateRecordingUi();
         session.Cleared += (_, _) => RebuildLog();
         session.Imported += (_, _) => RebuildLog();
+        session.EntryAdded += (_, _) => MarkDirty(true);
+        session.Cleared += (_, _) => MarkDirty(false);
+
+        // Tarih kutusundan sonra yazılan tuşlar tarihi değiştirmesin: seçim bitince odak kayıt alanına dönüyor
+        dtpFrom.CloseUp += (_, _) => BeginInvoke(() => capturePad.Focus());
+        dtpTo.CloseUp += (_, _) => BeginInvoke(() => capturePad.Focus());
+        dtpFrom.KeyDown += DatePicker_KeyDown;
+        dtpTo.KeyDown += DatePicker_KeyDown;
+        FormClosing += MainForm_FormClosing;
+        statusStrip.Paint += (_, e) =>
+        {
+            using var line = new Pen(Color.FromArgb(226, 232, 240));
+            e.Graphics.DrawLine(line, 0, 0, statusStrip.Width, 0);
+        };
+        Load += (_, _) => FitToScreen();
 
         DateTime today = DateTime.Today;
         dtpFrom.Value = today;
         dtpTo.Value = today.AddDays(1).AddSeconds(-1);
 
-        toolTip.SetToolTip(btnStart, "Klavye olaylarını kaydetmeye başla");
-        toolTip.SetToolTip(btnStop, "Kaydı durdur (mevcut kayıtlar silinmez)");
+        toolTip.SetToolTip(btnStart, "Klavye olaylarını kaydetmeye başla (F9)");
+        toolTip.SetToolTip(btnStop, "Kaydı durdur, mevcut kayıtlar silinmez (F9)");
         toolTip.SetToolTip(btnClear, "Ekrandaki ve bellekteki tüm kayıtları sil");
-        toolTip.SetToolTip(btnSave, "Kayıtları .txt dosyasına kaydet");
-        toolTip.SetToolTip(btnOpen, "Daha önce kaydedilmiş bir .txt dosyasını aç");
-        toolTip.SetToolTip(btnApplyFilter, "Sadece seçilen zaman aralığındaki kayıtları göster");
+        toolTip.SetToolTip(btnSave, "Kayıtları .txt dosyasına kaydet (Ctrl+S)");
+        toolTip.SetToolTip(btnOpen, "Daha önce kaydedilmiş bir .txt dosyasını aç (Ctrl+O)");
+        toolTip.SetToolTip(btnApplyFilter, "Sadece seçilen zaman aralığındaki kayıtları göster (tarih kutusunda Enter)");
+        toolTip.SetToolTip(btnClearFilter, "Zaman filtresini kaldır, tüm kayıtları göster");
+        toolTip.SetToolTip(btnAbout, "Uygulama ve gizlilik bilgisi (F1)");
 
         UpdateRecordingUi();
         RebuildLog();
@@ -69,6 +89,77 @@ public partial class MainForm : Form
         KeyLogEntry? entry = session.RecordKeyDown(e.KeyCode, e.Modifiers);
         if (entry != null && !entry.IsRepeat)
             capturePad.LastKeyText = KeyNameFormatter.FormatCombination(e.KeyCode, e.Modifiers);
+
+        // Kısayollar: tuş yine de kayda düşüyor, sonra ilgili işlem yapılıyor
+        if (entry is { IsRepeat: true })
+            return;
+        switch (e.KeyData)
+        {
+            case Keys.F9:
+                (session.IsRecording ? btnStop : btnStart).PerformClick();
+                break;
+            case Keys.Control | Keys.S:
+                BeginInvoke(() => btnSave.PerformClick());
+                break;
+            case Keys.Control | Keys.O:
+                BeginInvoke(() => btnOpen.PerformClick());
+                break;
+            case Keys.F1:
+                BeginInvoke(() => btnAbout.PerformClick());
+                break;
+        }
+    }
+
+    private void DatePicker_KeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.KeyCode == Keys.Enter)
+        {
+            e.SuppressKeyPress = true;
+            btnApplyFilter.PerformClick();
+        }
+    }
+
+    private void MarkDirty(bool value)
+    {
+        if (dirty == value)
+            return;
+        dirty = value;
+        UpdateFileLabel();
+    }
+
+    private void UpdateFileLabel()
+    {
+        string name = currentFilePath is null ? "kaydedilmedi" : Path.GetFileName(currentFilePath);
+        lblFile.Text = "Dosya: " + name + (dirty && currentFilePath != null ? "  (kaydedilmemiş değişiklik var)" : "");
+        lblFile.ToolTipText = currentFilePath ?? "Kayıtlar henüz bir dosyaya kaydedilmedi";
+        lblFile.ForeColor = dirty && session.Entries.Count > 0 ? Color.FromArgb(180, 83, 9) : Color.FromArgb(100, 116, 139);
+    }
+
+    /// <summary>Yüksek DPI'da (ör. %150) pencere ekrandan taşmasın.</summary>
+    private void FitToScreen()
+    {
+        Rectangle area = Screen.FromPoint(Cursor.Position).WorkingArea;
+        MinimumSize = new Size(Math.Min(MinimumSize.Width, area.Width), Math.Min(MinimumSize.Height, area.Height));
+        if (Width > area.Width || Height > area.Height)
+        {
+            Size = new Size(Math.Min(Width, area.Width), Math.Min(Height, area.Height));
+            StartPosition = FormStartPosition.Manual;
+            Location = new Point(area.Left + (area.Width - Width) / 2, area.Top + (area.Height - Height) / 2);
+        }
+    }
+
+    private void MainForm_FormClosing(object? sender, FormClosingEventArgs e)
+    {
+        if (e.CloseReason != CloseReason.UserClosing || !dirty || session.Entries.Count == 0)
+            return;
+        var answer = MessageBox.Show(this,
+            $"{session.Entries.Count} kayıt henüz bir dosyaya kaydedilmedi.\nKaydetmeden çıkmak istiyor musunuz?",
+            "Çıkış", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
+        if (answer != DialogResult.Yes)
+        {
+            e.Cancel = true;
+            capturePad.Focus();
+        }
     }
 
     private void MainForm_KeyUp(object? sender, KeyEventArgs e)
@@ -156,24 +247,25 @@ public partial class MainForm : Form
     private void btnSave_Click(object? sender, EventArgs e)
     {
         if (session.Entries.Count == 0)
-        {
-            MessageBox.Show(this, "Kaydedilecek kayıt yok.", "Kaydet", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
-        }
 
         using var dialog = new SaveFileDialog
         {
             Title = "Kayıtları kaydet",
             Filter = "Metin dosyası (*.txt)|*.txt",
             FileName = LogFileService.SuggestFileName(DateTime.Now),
+            InitialDirectory = lastFolder,
+            RestoreDirectory = true,
+            OverwritePrompt = true,
             AddExtension = true,
             DefaultExt = "txt"
         };
 
         if (dialog.ShowDialog(this) == DialogResult.OK && SaveToFile(dialog.FileName, showErrors: true))
         {
-            MessageBox.Show(this, $"{session.Entries.Count} kayıt kaydedildi:\n{dialog.FileName}", "Kaydet",
-                MessageBoxButtons.OK, MessageBoxIcon.Information);
+            // Başarı için ayrı pencere açmak yerine durum çubuğunda gösteriliyor
+            lblFile.Text = $"✓ {session.Entries.Count} kayıt kaydedildi: {Path.GetFileName(dialog.FileName)}";
+            lblFile.ForeColor = Color.FromArgb(22, 163, 74);
         }
 
         capturePad.Focus();
@@ -185,7 +277,9 @@ public partial class MainForm : Form
         {
             LogFileService.Save(path, session.Entries.ToList());
             currentFilePath = path;
-            lblFile.Text = "Dosya: " + Path.GetFileName(path);
+            lastFolder = Path.GetDirectoryName(path) ?? lastFolder;
+            dirty = false;
+            UpdateFileLabel();
             return true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
@@ -202,7 +296,9 @@ public partial class MainForm : Form
         using var dialog = new OpenFileDialog
         {
             Title = "Kayıt dosyası aç",
-            Filter = "Metin dosyası (*.txt)|*.txt|Tüm dosyalar (*.*)|*.*"
+            Filter = "Metin dosyası (*.txt)|*.txt|Tüm dosyalar (*.*)|*.*",
+            InitialDirectory = lastFolder,
+            RestoreDirectory = true
         };
 
         if (dialog.ShowDialog(this) == DialogResult.OK)
@@ -210,25 +306,35 @@ public partial class MainForm : Form
             bool replace = false;
             if (session.Entries.Count > 0)
             {
-                var answer = MessageBox.Show(this,
-                    $"Ekranda {session.Entries.Count} kayıt var.\n\nEvet: mevcut kayıtları silip dosyayı aç\nHayır: dosyadaki kayıtları mevcutlara ekle",
-                    "Dosya aç", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
-                if (answer == DialogResult.Cancel)
+                var replaceButton = new TaskDialogCommandLinkButton("Mevcut kayıtları sil ve dosyayı aç",
+                    dirty ? "Kaydedilmemiş kayıtlar kaybolur." : null);
+                var appendButton = new TaskDialogCommandLinkButton("Dosyadaki kayıtları mevcutlara ekle",
+                    "Kayıtlar zaman sırasına göre birleştirilir.");
+                var page = new TaskDialogPage
+                {
+                    Caption = "Dosya aç",
+                    Heading = $"Ekranda {session.Entries.Count} kayıt var. Dosya nasıl açılsın?",
+                    Icon = TaskDialogIcon.Information,
+                    Buttons = { replaceButton, appendButton, TaskDialogButton.Cancel },
+                    DefaultButton = appendButton
+                };
+                var choice = TaskDialog.ShowDialog(this, page);
+                if (choice != replaceButton && choice != appendButton)
                 {
                     capturePad.Focus();
                     return;
                 }
-                replace = answer == DialogResult.Yes;
+                replace = choice == replaceButton;
             }
 
             LoadResult? result = LoadFromFile(dialog.FileName, showErrors: true, replace);
             if (result != null)
             {
-                string message = $"{result.Entries.Count} kayıt yüklendi.";
                 if (result.SkippedLines > 0)
-                    message += $"\n{result.SkippedLines} satır okunamadığı için atlandı.";
-                MessageBox.Show(this, message, "Dosya açıldı", MessageBoxButtons.OK,
-                    result.SkippedLines > 0 ? MessageBoxIcon.Warning : MessageBoxIcon.Information);
+                    MessageBox.Show(this, $"{result.Entries.Count} kayıt yüklendi.\n{result.SkippedLines} satır okunamadığı için atlandı.",
+                        "Dosya açıldı", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                else if (result.Entries.Count == 0)
+                    MessageBox.Show(this, "Dosyada kayıt bulunamadı.", "Dosya açıldı", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
         }
 
@@ -240,9 +346,13 @@ public partial class MainForm : Form
         try
         {
             LoadResult result = LogFileService.Load(path);
+            bool hadOtherEntries = !replace && session.Entries.Count > 0;
             session.Import(result.Entries, replace);
             currentFilePath = path;
-            lblFile.Text = "Dosya: " + Path.GetFileName(path);
+            lastFolder = Path.GetDirectoryName(path) ?? lastFolder;
+            // Başka kayıtlarla birleştirildiyse ekrandaki liste dosyayla aynı değil
+            dirty = hadOtherEntries;
+            UpdateFileLabel();
             return result;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException or OutOfMemoryException)
@@ -388,9 +498,11 @@ public partial class MainForm : Form
     {
         if (empty)
         {
-            lblEmpty.Text = session.Entries.Count > 0
-                ? "Seçili filtreye uyan kayıt yok."
-                : "Henüz kayıt yok.\r\n\"Başlat\" butonuna basın ve yukarıdaki alana tıklayıp yazmaya başlayın.";
+            lblEmpty.Text = session.Entries.Count == 0
+                ? "Henüz kayıt yok.\r\n\"Başlat\" butonuna (F9) basın ve yukarıdaki alana tıklayıp yazmaya başlayın."
+                : filterActive
+                    ? "Seçili filtreye uyan kayıt yok."
+                    : "Bu görünüm ayarlarında gösterilecek kayıt yok.\r\n(KeyUp / KeyPress kutularını işaretleyin.)";
         }
         lblEmpty.Visible = empty;
         rtbLog.Visible = !empty;
@@ -419,7 +531,7 @@ public partial class MainForm : Form
         statsDirty = false;
 
         var entries = EntriesForStats().ToList();
-        tileTotal.Value = KeyStatistics.TotalKeyPresses(entries).ToString();
+        tileTotal.Value = KeyStatistics.TotalKeyPresses(entries).ToString("N0");
         tileKpm.Value = KeyStatistics.KeysPerMinute(entries).ToString("0");
         tileDistinct.Value = KeyStatistics.DistinctKeys(entries).ToString();
         frequencyChart.Items = KeyStatistics.TopKeys(entries, 10);
@@ -427,7 +539,9 @@ public partial class MainForm : Form
 
     private void UpdateCounts()
     {
-        lblCount.Text = $"{session.Entries.Count} kayıt";
+        lblCount.Text = $"{session.Entries.Count:N0} kayıt";
+        btnSave.Enabled = btnClear.Enabled = session.Entries.Count > 0;
+        btnClearFilter.Enabled = filterActive;
         if (filterActive)
         {
             int inRange = session.Entries.Count(InFilter);
