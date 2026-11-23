@@ -273,15 +273,8 @@ public partial class MainForm : Form
 
     private void btnAbout_Click(object? sender, EventArgs e)
     {
-        MessageBox.Show(this,
-            "Key Event Logger  ·  YMH219 Nesne Tabanlı Programlama\n\n" +
-            "Bu uygulama yalnızca KENDİ penceresi odaktayken klavye olaylarını (KeyDown, KeyUp, KeyPress) gösterir.\n\n" +
-            "• Global klavye kancası (hook) kullanılmaz\n" +
-            "• Arka planda / gizli çalışmaz, başlangıçta otomatik açılmaz\n" +
-            "• Başka uygulamalardan veri toplamaz\n" +
-            "• Kayıtları ağ üzerinden hiçbir yere göndermez\n" +
-            "• Kayıtlar yalnızca kullanıcı isterse yerel .txt dosyasına yazılır",
-            "Hakkında ve Gizlilik", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        using (var about = new AboutForm())
+            about.ShowDialog(this);
         capturePad.Focus();
     }
 
