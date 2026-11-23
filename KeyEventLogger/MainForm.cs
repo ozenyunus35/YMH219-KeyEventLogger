@@ -21,6 +21,9 @@ public partial class MainForm : Form
     private readonly KeyLogSession session = new();
     private bool windowFocused = true;
     private bool filterActive;
+    // Filtre "Uygula"ya basıldığı andaki aralık; tarih kutuları değiştirilip uygulanmadıysa liste ve sayılar değişmesin
+    private DateTime filterFrom, filterTo;
+    private int visibleLineCount;
     private bool statsDirty = true;
     private string? currentFilePath;
 
@@ -40,6 +43,7 @@ public partial class MainForm : Form
         session.EntryAdded += Session_EntryAdded;
         session.RecordingStateChanged += (_, _) => UpdateRecordingUi();
         session.Cleared += (_, _) => RebuildLog();
+        session.Imported += (_, _) => RebuildLog();
 
         DateTime today = DateTime.Today;
         dtpFrom.Value = today;
@@ -84,7 +88,7 @@ public partial class MainForm : Form
         const int WM_SYSCOMMAND = 0x0112;
         const int SC_KEYMENU = 0xF100;
 
-        if (m.Msg == WM_SYSCOMMAND && ((int)m.WParam & 0xFFF0) == SC_KEYMENU && m.LParam == IntPtr.Zero)
+        if (m.Msg == WM_SYSCOMMAND && ((long)m.WParam & 0xFFF0) == SC_KEYMENU && m.LParam == IntPtr.Zero)
             return;
 
         base.WndProc(ref m);
@@ -203,7 +207,21 @@ public partial class MainForm : Form
 
         if (dialog.ShowDialog(this) == DialogResult.OK)
         {
-            LoadResult? result = LoadFromFile(dialog.FileName, showErrors: true);
+            bool replace = false;
+            if (session.Entries.Count > 0)
+            {
+                var answer = MessageBox.Show(this,
+                    $"Ekranda {session.Entries.Count} kayıt var.\n\nEvet: mevcut kayıtları silip dosyayı aç\nHayır: dosyadaki kayıtları mevcutlara ekle",
+                    "Dosya aç", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
+                if (answer == DialogResult.Cancel)
+                {
+                    capturePad.Focus();
+                    return;
+                }
+                replace = answer == DialogResult.Yes;
+            }
+
+            LoadResult? result = LoadFromFile(dialog.FileName, showErrors: true, replace);
             if (result != null)
             {
                 string message = $"{result.Entries.Count} kayıt yüklendi.";
@@ -217,17 +235,17 @@ public partial class MainForm : Form
         capturePad.Focus();
     }
 
-    internal LoadResult? LoadFromFile(string path, bool showErrors)
+    internal LoadResult? LoadFromFile(string path, bool showErrors, bool replace = false)
     {
         try
         {
             LoadResult result = LogFileService.Load(path);
-            session.Import(result.Entries);
+            session.Import(result.Entries, replace);
             currentFilePath = path;
             lblFile.Text = "Dosya: " + Path.GetFileName(path);
             return result;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException or OutOfMemoryException)
         {
             if (showErrors)
                 MessageBox.Show(this, "Dosya açılamadı:\n" + ex.Message, "Hata", MessageBoxButtons.OK, MessageBoxIcon.Error);
@@ -259,6 +277,9 @@ public partial class MainForm : Form
 
         dtpFrom.Value = from;
         dtpTo.Value = to;
+        filterFrom = from;
+        // Saat kutusu saniye gösteriyor: "23:59:59" o saniyenin tamamını kapsasın (23:59:59.500 de dahil)
+        filterTo = to.AddSeconds(1);
         filterActive = true;
         RebuildLog();
         return true;
@@ -285,7 +306,14 @@ public partial class MainForm : Form
         statsDirty = true;
         if (IsVisible(entry))
         {
+            // Uzun kayıtta kutu sınırsız büyümesin: sınır biraz aşılınca son satırlarla yeniden çiziliyor
+            if (visibleLineCount >= MaxVisibleLines + 500)
+            {
+                RebuildLog();
+                return;
+            }
             AppendEntry(entry);
+            visibleLineCount++;
             rtbLog.ScrollToCaret();
             ShowEmptyState(false);
         }
@@ -298,7 +326,7 @@ public partial class MainForm : Form
             return false;
         if (entry.Kind == KeyEventKind.KeyPress && !chkShowKeyPress.Checked)
             return false;
-        if (filterActive && (entry.Timestamp < dtpFrom.Value || entry.Timestamp > dtpTo.Value))
+        if (filterActive && !InFilter(entry))
             return false;
         return true;
     }
@@ -332,13 +360,22 @@ public partial class MainForm : Form
     private void RebuildLog()
     {
         var visible = session.Entries.Where(IsVisible).ToList();
-        var shown = visible.Skip(Math.Max(0, visible.Count - MaxVisibleLines));
+        var shown = visible.Skip(Math.Max(0, visible.Count - MaxVisibleLines)).ToList();
 
-        rtbLog.SuspendLayout();
-        rtbLog.Clear();
-        foreach (var entry in shown)
-            AppendEntry(entry);
-        rtbLog.ResumeLayout();
+        // SuspendLayout RichTextBox'ın her satırda yeniden çizilmesini durdurmuyor; WM_SETREDRAW durduruyor
+        SetRedraw(rtbLog, false);
+        try
+        {
+            rtbLog.Clear();
+            foreach (var entry in shown)
+                AppendEntry(entry);
+        }
+        finally
+        {
+            SetRedraw(rtbLog, true);
+            rtbLog.Invalidate();
+        }
+        visibleLineCount = shown.Count;
         rtbLog.ScrollToCaret();
 
         ShowEmptyState(visible.Count == 0);
@@ -359,8 +396,21 @@ public partial class MainForm : Form
         rtbLog.Visible = !empty;
     }
 
+    private bool InFilter(KeyLogEntry e) => e.Timestamp >= filterFrom && e.Timestamp < filterTo;
+
     private IEnumerable<KeyLogEntry> EntriesForStats() =>
-        filterActive ? session.Entries.Where(e => e.Timestamp >= dtpFrom.Value && e.Timestamp <= dtpTo.Value) : session.Entries;
+        filterActive ? session.Entries.Where(InFilter) : session.Entries;
+
+    private const int WM_SETREDRAW = 0x000B;
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+
+    private static void SetRedraw(Control control, bool on)
+    {
+        if (control.IsHandleCreated)
+            SendMessage(control.Handle, WM_SETREDRAW, on ? 1 : 0, IntPtr.Zero);
+    }
 
     private void UpdateStats()
     {
@@ -380,7 +430,7 @@ public partial class MainForm : Form
         lblCount.Text = $"{session.Entries.Count} kayıt";
         if (filterActive)
         {
-            int inRange = session.Entries.Count(e => e.Timestamp >= dtpFrom.Value && e.Timestamp <= dtpTo.Value);
+            int inRange = session.Entries.Count(InFilter);
             lblFilter.Text = $"Filtre: {inRange} / {session.Entries.Count}";
             lblFilter.ForeColor = KeyDownColor;
         }
@@ -424,7 +474,7 @@ public partial class MainForm : Form
         if (session.IsRecording && session.RecordingStartedAt is DateTime start)
         {
             TimeSpan elapsed = DateTime.Now - start;
-            lblDuration.Text = $"Kayıt süresi: {elapsed:hh\\:mm\\:ss}";
+            lblDuration.Text = $"Kayıt süresi: {(int)elapsed.TotalHours:00}:{elapsed.Minutes:00}:{elapsed.Seconds:00}";
         }
         else
         {

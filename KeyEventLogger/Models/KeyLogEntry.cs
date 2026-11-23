@@ -78,14 +78,16 @@ public sealed class KeyLogEntry
         if (!DateTime.TryParseExact(parts[0], TimeFormat, CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime time))
             return false;
 
-        if (!Enum.TryParse(parts[1].Trim(), out KeyEventKind kind) || !Enum.IsDefined(kind))
+        string kindText = parts[1].Trim();
+        if (kindText.Length == 0 || !char.IsLetter(kindText[0]) ||
+            !Enum.TryParse(kindText, out KeyEventKind kind) || !Enum.IsDefined(kind))
             return false;
 
         Dictionary<string, int> values = new();
         foreach (string pair in parts[3].Split(';'))
         {
             string[] kv = pair.Split('=');
-            if (kv.Length != 2 || !int.TryParse(kv[1], out int number))
+            if (kv.Length != 2 || !int.TryParse(kv[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int number))
                 return false;
             values[kv[0].Trim()] = number;
         }
@@ -101,8 +103,13 @@ public sealed class KeyLogEntry
         if (!values.TryGetValue("k", out int key) || !values.TryGetValue("m", out int mod))
             return false;
 
+        // Tuş kodu 16 bit, değiştirici tuşlar sadece üst bitlerde olabilir (elle bozulmuş dosyalara karşı)
+        if (key < 0 || key > (int)Keys.KeyCode || mod < 0 || (mod & (int)Keys.KeyCode) != 0)
+            return false;
+
+        // "Tekrar" bilgisi sadece KeyDown için anlamlı
         values.TryGetValue("r", out int repeat);
-        entry = new KeyLogEntry(time, kind, (Keys)key, (Keys)mod, null, repeat == 1);
+        entry = new KeyLogEntry(time, kind, (Keys)key, (Keys)mod, null, kind == KeyEventKind.KeyDown && repeat == 1);
         return true;
     }
 

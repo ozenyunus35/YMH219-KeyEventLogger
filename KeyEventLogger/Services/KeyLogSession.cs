@@ -28,6 +28,9 @@ public class KeyLogSession
     public event EventHandler? RecordingStateChanged;
     public event EventHandler? Cleared;
 
+    /// <summary>Dosyadan toplu yükleme bitti (binlerce EntryAdded yerine tek olay).</summary>
+    public event EventHandler? Imported;
+
     public void Start()
     {
         if (IsRecording)
@@ -67,7 +70,11 @@ public class KeyLogSession
 
     public KeyLogEntry? RecordKeyUp(Keys keyCode, Keys modifiers)
     {
-        pressedKeys.Remove(keyCode);
+        // NumLock kapalıyken Shift+Num4 KeyDown'da "Left", KeyUp'ta "NumPad4" olarak geliyor.
+        // Basılmamış görünen bir tuş bırakılıyorsa basılı tuş listesi güvenilmez: temizleniyor,
+        // yoksa "Left" sonsuza kadar basılı sanılıp sonraki gerçek basışlar "tekrar" sayılıyordu.
+        if (!pressedKeys.Remove(keyCode) && (modifiers & (Keys.Shift | Keys.Control | Keys.Alt)) == Keys.None)
+            pressedKeys.Clear();
         return Add(new KeyLogEntry(clock(), KeyEventKind.KeyUp, keyCode, modifiers));
     }
 
@@ -77,13 +84,16 @@ public class KeyLogSession
     }
 
     /// <summary>Dosyadan yüklenen kayıtları eklemek için (kayıt kapalı olsa da).</summary>
-    public void Import(IEnumerable<KeyLogEntry> loaded)
+    public void Import(IEnumerable<KeyLogEntry> loaded, bool replace = false)
     {
-        foreach (var entry in loaded)
-        {
-            entries.Add(entry);
-            EntryAdded?.Invoke(this, entry);
-        }
+        if (replace)
+            entries.Clear();
+        entries.AddRange(loaded);
+        // Farklı zamanlarda kaydedilmiş dosyalar birleştirilince liste zaman sırasında kalsın (sıralama kararlı)
+        var sorted = entries.OrderBy(e => e.Timestamp).ToList();
+        entries.Clear();
+        entries.AddRange(sorted);
+        Imported?.Invoke(this, EventArgs.Empty);
     }
 
     public IEnumerable<KeyLogEntry> InRange(DateTime from, DateTime to)
