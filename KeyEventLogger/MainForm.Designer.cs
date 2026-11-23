@@ -104,7 +104,7 @@ partial class MainForm
         btnAbout.Size = new Size(96, 32);
         btnAbout.TabIndex = 3;
         btnAbout.Text = "Hakkında";
-        btnAbout.Variant = Controls.ButtonVariant.Ghost;
+        btnAbout.Variant = KeyEventLogger.Controls.ButtonVariant.Ghost;
         btnAbout.Click += btnAbout_Click;
         //
         // recordingBadge
@@ -163,7 +163,7 @@ partial class MainForm
         btnStart.Size = new Size(112, 36);
         btnStart.TabIndex = 0;
         btnStart.Text = "▶  Başlat";
-        btnStart.Variant = Controls.ButtonVariant.Primary;
+        btnStart.Variant = KeyEventLogger.Controls.ButtonVariant.Primary;
         btnStart.Click += btnStart_Click;
         //
         // btnStop
@@ -174,7 +174,7 @@ partial class MainForm
         btnStop.Size = new Size(112, 36);
         btnStop.TabIndex = 1;
         btnStop.Text = "■  Durdur";
-        btnStop.Variant = Controls.ButtonVariant.Danger;
+        btnStop.Variant = KeyEventLogger.Controls.ButtonVariant.Danger;
         btnStop.Click += btnStop_Click;
         //
         // toolbarSeparator
@@ -413,7 +413,7 @@ partial class MainForm
         btnClearFilter.Size = new Size(80, 28);
         btnClearFilter.TabIndex = 4;
         btnClearFilter.Text = "Kaldır";
-        btnClearFilter.Variant = Controls.ButtonVariant.Ghost;
+        btnClearFilter.Variant = KeyEventLogger.Controls.ButtonVariant.Ghost;
         btnClearFilter.Click += btnClearFilter_Click;
         //
         // btnApplyFilter
