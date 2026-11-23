@@ -9,6 +9,10 @@
     <RootNamespace>KeyEventLogger</RootNamespace>
     <RollForward>Major</RollForward>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <ApplicationIcon>app.ico</ApplicationIcon>
+    <AssemblyTitle>Key Event Logger</AssemblyTitle>
+    <Product>Key Event Logger</Product>
+    <Version>1.0.0</Version>
   </PropertyGroup>
 
 </Project>
