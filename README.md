@@ -155,4 +155,4 @@ tekrar olup olmadığına oturum sınıfı karar verir. Böylece iş mantığı 
 
 ## 👤 Öğrenci
 
-**Yunus Emre Özen** — YMH219 Nesne Tabanlı Programlama
+**Yunus Emre Özen** · Öğrenci No: **215542001** · YMH219 Nesne Tabanlı Programlama
